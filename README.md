@@ -129,6 +129,13 @@ CSV columns: `tow, wnc, mode, nrsv, lat, lon, height` plus `roll, pitch, heading
 
 The sample generator writes a synthetic straight-line path at 1 Hz (mostly RTK Fixed, a few RTK Float epochs) so you can exercise the parser without a receiver. The data is clearly synthetic — it is for testing, not analysis.
 
+## Documentation
+
+- [Septentrio GNSS Receivers with ROS: Official ROSaic Driver Guide](docs/ros-integration-guide.md) - ROS 1/ROS 2 integration, INS YAML config, NED/ENU frames, integration comparison
+- [Jammertest 2025 Results: AIM+ Keeps UAVs on Mission](docs/jammertest-2025-results.md) - field evidence for AIM+ anti-jamming / anti-spoofing
+
+---
+
 ---
 
 **[Browse GNSS Receivers](https://uav-gnss.com/product-category/gnss-receiver/)** | **[AIM+ Technology](https://uav-gnss.com/aim-resilient-gnss/)** | **[Integration Guide Blog](https://uav-gnss.com/blog/)**
