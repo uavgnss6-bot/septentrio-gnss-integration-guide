@@ -133,6 +133,7 @@ The sample generator writes a synthetic straight-line path at 1 Hz (mostly RTK F
 
 - [Septentrio GNSS Receivers with ROS: Official ROSaic Driver Guide](docs/ros-integration-guide.md) - ROS 1/ROS 2 integration, INS YAML config, NED/ENU frames, integration comparison
 - [Jammertest 2025 Results: AIM+ Keeps UAVs on Mission](docs/jammertest-2025-results.md) - field evidence for AIM+ anti-jamming / anti-spoofing
+- [CAN/J1939 Machine-Control Integration](docs/machine-control-can-j1939.md)
 
 ---
 
