@@ -12,10 +12,11 @@ Improvements over the original parser:
   * NrSV (satellite count) included in CSV output
 
 Usage:
-    python sbf-parser.py input.sbf [--check-crc] [--utc] [-o output.csv]
+    python sbf-parser.py input.sbf [--check-crc] [--utc] [--analyze] [-o output.csv]
 
-Output:
-    CSV with tow, wn, mode, nrsv, lat, lon, height[, roll, pitch, heading]
+    --analyze prints an RTK drop report (fix-quality summary + drop events with
+    UTC/TOW timestamps and satellite counts) instead of a CSV.
+    -o writes a CSV (tow, wn, mode, nrsv, lat, lon, height[, roll, pitch, heading]).
 """
 
 import struct
@@ -23,6 +24,7 @@ import sys
 import csv
 import argparse
 import datetime as dt
+from collections import Counter
 
 BLOCK_ID_PVT = 4028    # PVTGeodetic
 BLOCK_ID_ATT = 4031    # AttEuler
@@ -97,6 +99,7 @@ def parse_sbf(filename, check_crc=False):
             results.append({
                 'tow': tow, 'wnc': wnc,
                 'mode': MODE_MAP.get(mode, 'Unknown(%d)' % mode),
+                'mode_id': mode,
                 'error': error,
                 'lat': lat, 'lon': lon, 'height': height,
                 'nrsv': nrsv,
@@ -111,6 +114,78 @@ def parse_sbf(filename, check_crc=False):
                         'roll': roll, 'pitch': pitch, 'heading': heading})
         i += block_len
     return results, att
+
+
+def analyze(results, utc=False):
+    """Print a fix-quality summary and RTK drop events (fixed -> degraded)."""
+    if not results:
+        print('No PVT data to analyze')
+        return
+    total = len(results)
+    counts = Counter(r['mode'] for r in results)
+    order = ['RTK Fixed', 'RTK Float', 'Differential', 'Single', 'No GNSS']
+    print('\nFix-quality summary (%d epochs):' % total)
+    for m in order:
+        c = counts.get(m, 0)
+        if c:
+            print('  %-12s %5d  (%5.1f%%)' % (m, c, 100.0 * c / total))
+    other = sum(c for m, c in counts.items() if m not in order)
+    if other:
+        print('  %-12s %5d  (%5.1f%%)' % ('Other', other, 100.0 * other / total))
+
+    def stamp(r):
+        if utc:
+            return gps_week_to_utc(r['wnc'], r['tow'])
+        return 'tow=%d ms' % r['tow']
+
+    # Drop event = a contiguous degraded run (mode != RTK Fixed) that follows a
+    # fixed epoch. Track satellite counts at onset and the minimum during the run.
+    events = []
+    saw_fixed = False
+    last_fixed_nrsv = None
+    cur = None
+    for r in results:
+        if r['mode_id'] == 4:
+            saw_fixed = True
+            last_fixed_nrsv = r['nrsv']
+            if cur is not None:
+                cur['end_tow'] = r['tow']
+                cur['end_stamp'] = stamp(r)
+                cur['duration_s'] = (r['tow'] - cur['start_tow']) / 1000.0
+                cur['recovered'] = True
+                events.append(cur)
+                cur = None
+        else:
+            if cur is None:
+                if saw_fixed:
+                    cur = {'start_tow': r['tow'], 'start_stamp': stamp(r),
+                           'start_mode': r['mode'],
+                           'onset_nrsv': last_fixed_nrsv,
+                           'min_nrsv': r['nrsv'],
+                           'duration_s': None, 'recovered': False}
+            else:
+                cur['min_nrsv'] = min(cur['min_nrsv'], r['nrsv'])
+    if cur is not None:  # still degraded at end of log
+        cur['duration_s'] = (results[-1]['tow'] - cur['start_tow']) / 1000.0
+        events.append(cur)
+
+    print('\nDrop events (RTK Fixed -> degraded):')
+    if not events:
+        if not saw_fixed:
+            print('  (log never reached RTK Fixed)')
+        else:
+            print('  (none - held RTK Fixed for the whole log)')
+        return
+    for i, e in enumerate(events, 1):
+        line = ('  #%d  %s: RTK Fixed -> %s for %.1f s'
+                % (i, e['start_stamp'], e['start_mode'], e['duration_s']))
+        if e['onset_nrsv'] is not None:
+            line += '   (NrSV %s -> %d)' % (e['onset_nrsv'], e['min_nrsv'])
+        if e['recovered']:
+            line += ', recovered at %s' % e['end_stamp']
+        else:
+            line += ', STILL DEGRADED at end of log'
+        print(line)
 
 
 def export_csv(results, att, output, utc=False):
@@ -145,7 +220,10 @@ if __name__ == '__main__':
                     help='validate CRC-16/X25 on every block (recommended)')
     ap.add_argument('--utc', action='store_true',
                     help='add UTC timestamp column (GPS week + TOW, leap-second corrected)')
-    ap.add_argument('-o', '--output', default='sbf_output.csv', help='output CSV path')
+    ap.add_argument('--analyze', action='store_true',
+                    help='print RTK drop report (fix-quality summary + drop events)')
+    ap.add_argument('-o', '--output', default=None,
+                    help='output CSV path (omit for console-only summary / analysis)')
     args = ap.parse_args()
     results, att = parse_sbf(args.input, check_crc=args.check_crc)
     if results:
@@ -157,7 +235,10 @@ if __name__ == '__main__':
             a0 = att[0]
             print('Attitude: Heading=%.2f deg, Roll=%.2f, Pitch=%.2f'
                   % (a0['heading'], a0['roll'], a0['pitch']))
-        export_csv(results, att, args.output, utc=args.utc)
+        if args.analyze:
+            analyze(results, utc=args.utc)
+        if args.output:
+            export_csv(results, att, args.output, utc=args.utc)
     else:
         print('No valid SBF data found')
         sys.exit(1)

@@ -10,7 +10,7 @@ The data is SYNTHETIC - generated for parser testing/demo purposes,
 not recorded from a receiver.
 
 Usage:
-    python make-sample-sbf.py output.sbf [--seconds 30] [--attitude]
+    python make-sample-sbf.py output.sbf [--seconds 30] [--attitude] [--drops 10,20]
 """
 
 import struct
@@ -65,22 +65,44 @@ if __name__ == '__main__':
     ap.add_argument('--seconds', type=int, default=30, help='duration in seconds (default 30)')
     ap.add_argument('--attitude', action='store_true', help='include AttEuler heading blocks')
     ap.add_argument('--wnc', type=int, default=2400, help='continuous GPS week (default 2400 ~ 2026)')
+    ap.add_argument('--drops', default='',
+                    help='comma-separated seconds at which to insert a realistic RTK drop '
+                         '(3 s of RTK Float with a satellite-count dip); default: brief '
+                         'RTK Float epochs at 10-11 s')
     args = ap.parse_args()
 
     lat0, lon0, h0 = 40.7128, -74.0060, 15.0   # NYC as a recognizable start point
     dlat, dlon = 0.00001, 0.00002              # ~1-2 m per second drift
+    drops = []
+    if args.drops:
+        for part in args.drops.split(','):
+            part = part.strip()
+            if part:
+                drops.append(int(part))
+    use_drops = bool(drops)
     out = bytearray()
     n_pvt = 0
     for sec in range(args.seconds):
         tow = sec * 1000
-        # mostly RTK Fixed (4), a few RTK Float (3) to exercise the mode map
-        mode = 3 if sec in (10, 11) else 4
+        # mostly RTK Fixed (4); drop seconds go RTK Float (3) with fewer satellites
+        mode = 4
         nrsv = 12 + (sec % 9)
+        if use_drops:
+            for d in drops:
+                if d <= sec < d + 3:
+                    mode = 3
+                    nrsv = 6 + (sec - d)
+        else:
+            # legacy: a couple of RTK Float epochs to exercise the mode map
+            if sec in (10, 11):
+                mode = 3
         out += pvt_block(tow, args.wnc, lat0, lon0, h0, dlat, dlon, mode, nrsv)
         n_pvt += 1
         if args.attitude:
             out += att_block(tow, args.wnc, 90.0)
     with open(args.output, 'wb') as f:
         f.write(bytes(out))
-    print('Wrote %s: %d PVT blocks (%d s), attitude=%s'
-          % (args.output, n_pvt, args.seconds, 'yes' if args.attitude else 'no'))
+    print('Wrote %s: %d PVT blocks (%d s), attitude=%s, drops=%s'
+          % (args.output, n_pvt, args.seconds,
+             'yes' if args.attitude else 'no',
+             args.drops if use_drops else '10-11 s (legacy float)'))

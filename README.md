@@ -117,17 +117,27 @@ Quick test without hardware — generate a synthetic log, then parse it:
     python make-sample-sbf.py sample.sbf --seconds 30 --attitude
     python sbf-parser.py sample.sbf --check-crc --utc -o sample.csv
 
+Drop-analysis demo -- generate a log with realistic drop events (3 s of RTK Float with a satellite-count dip), then run the analyzer:
+
+    python make-sample-sbf.py sample.sbf --seconds 30 --drops 10,20
+    python sbf-parser.py sample.sbf --check-crc --utc --analyze
+
+The analyzer reports how long the log spent in each fix mode and lists every drop from RTK Fixed to a degraded mode with its start time, duration, and satellite count at onset vs. the minimum during the drop -- exactly what you want when diagnosing "RTK drops to float in the same spot every pass".
+
 Parser options:
 
 | Option | Effect |
 |--------|--------|
 | `--check-crc` | Validate CRC-16/X25 on every block (recommended; drops corrupt blocks) |
 | `--utc` | Add a UTC timestamp column (GPS week + TOW, leap-second corrected) |
-| `-o FILE` | Output CSV path (default `sbf_output.csv`) |
+| `--analyze` | Print an RTK drop report: fix-quality summary + every drop event with start time, duration, and satellite counts at onset / minimum |
+| `-o FILE` | Output CSV path (omit for console-only summary / analysis) |
 
 CSV columns: `tow, wnc, mode, nrsv, lat, lon, height` plus `roll, pitch, heading` when the log contains AttEuler blocks (dual-antenna heading receivers).
 
-The sample generator writes a synthetic straight-line path at 1 Hz (mostly RTK Fixed, a few RTK Float epochs) so you can exercise the parser without a receiver. The data is clearly synthetic — it is for testing, not analysis.
+For a worked example of using SBF logs to diagnose RTK dropouts (satellite-count analysis, fix-mode timeline, what to check before blaming the correction source), see our guide: [Diagnosing RTK Drops from SBF Logs](https://uav-gnss.com/satellite-count-drop-rtk-fixed-sbf-analyzer-guide/).
+
+The sample generator writes a synthetic straight-line path at 1 Hz (mostly RTK Fixed, a few RTK Float epochs) so you can exercise the parser without a receiver. The data is clearly synthetic — it is for testing, not analysis. Use `--drops 10,20` to embed realistic drop events for exercising the analyzer.
 
 ## Documentation
 
